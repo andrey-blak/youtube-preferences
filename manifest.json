@@ -4,6 +4,14 @@
   "version": "1.0.0",
   "description": "Disables unwanted YouTube playback features.",
   "permissions": ["storage"],
+  "background": {
+    "scripts": [
+      "background.js"
+    ]
+  },
+  "action": {
+    "default_title": "YouTube Preferences"
+  },
   "options_ui": {
     "page": "options.html",
     "open_in_tab": true
