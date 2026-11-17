@@ -4,10 +4,10 @@ import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 
 const code = await readFile(new URL("../logic.js", import.meta.url), "utf8");
-// vm contexts get built-ins but no host timers/console; provide them here.
+// vm contexts get built-ins but no host timers/console/URL; provide them here.
 // In the browser these are real globals, so logic.js stays environment-agnostic.
 const sandbox = vm.createContext({
-  console, setInterval, clearInterval, setTimeout, clearTimeout
+  console, setInterval, clearInterval, setTimeout, clearTimeout, URL
 });
 vm.runInContext(code, sandbox);
 const { YTLogic } = sandbox;
@@ -20,7 +20,8 @@ const track = ({ id, name, isOriginal, isDefault }) =>
 test("DEFAULT_CONFIG exists", () => {
   assert.equal(typeof YTLogic.DEFAULT_CONFIG, "object");
   for (const k of ["disableAutoplay", "selectOriginalAudio", "disableStableVolume",
-    "disableAnnotations", "disableAmbientMode", "preventFullscreenAutoplay"])
+    "disableAnnotations", "disableAmbientMode", "preventFullscreenAutoplay",
+    "collapseSidebar"])
     assert.equal(YTLogic.DEFAULT_CONFIG[k], true);
   assert.equal(YTLogic.DEFAULT_CONFIG.debug, false);   // logging off by default
 });
@@ -63,6 +64,17 @@ test("waitUntil resolves false on timeout", async () => {
 
 test("waitUntil async predicate supported", async () => {
   assert.equal(await YTLogic.waitUntil(async () => true, { interval: 10, timeout: 500 }), true);
+});
+
+// ---- sidebar collapse (feature B): pure watch-page predicate ----
+test("isWatchPage: /watch and /live only", () => {
+  assert.equal(YTLogic.isWatchPage("https://www.youtube.com/watch?v=x&list=y"), true);
+  assert.equal(YTLogic.isWatchPage("https://www.youtube.com/live/abc123"), true);
+  assert.equal(YTLogic.isWatchPage("https://www.youtube.com/results?search_query=asd"), false);
+  assert.equal(YTLogic.isWatchPage("https://www.youtube.com/"), false);
+  assert.equal(YTLogic.isWatchPage("https://www.youtube.com/feed/subscriptions"), false);
+  assert.equal(YTLogic.isWatchPage("https://www.youtube.com/shorts/xyz"), false);
+  assert.equal(YTLogic.isWatchPage("not a url"), false);
 });
 
 // ---- ambient preference (PREF cookie f7 bits) — golden vectors captured from

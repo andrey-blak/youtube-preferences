@@ -12,6 +12,7 @@
     waitUntil,
     findOriginalTrack,
     shouldEnforceFullscreenPause,
+    isWatchPage,
     applyAmbientPref,
     isAmbientPrefOff
   } = YTLogic;
@@ -105,6 +106,8 @@
   async function applyAll(reason) {
     // A stale intent must never survive into a new page/video: it is consumed by the next play event or dropped here, whichever comes first.
     playIntent = false;
+    // DOM-only and player-independent: must run before the watch-page bail.
+    await enforceSidebarCollapsed();
     // Non-watch pages (home, search) have no player: bail fast
     if (!getPlayer() &&
       !(await waitUntil(() => !!getPlayer(), {
@@ -290,6 +293,44 @@
       `PREF=${value};path=/;domain=youtube.com;secure;max-age=63072000`;
     log("ambient PREF bits (old-menu insurance) off:",
       isAmbientPrefOff(readPrefCookie()) ? "verified" : "write failed");
+  }
+
+  // ---- left sidebar (guide) collapse: all non-watch pages ----
+  /* Live probe 2026-11-17 (user's build, search page, sidebar open):
+  guide = tp-yt-app-drawer#guide, open state = `opened` attribute;
+  two yt-icon-button#guide-button instances exist, the bound one carries
+  pressed="true" while open; clicking either toggles.
+  Requirement: once the user manually re-opens the guide, do not touch it
+  again in this page session (until reload). Our own synthetic clicks are
+  filtered via isTrusted, so only user toggles arm the respect-flag. */
+  let userReopenedGuide = false;
+
+  document.addEventListener("click", e => {
+    if (e.isTrusted !== true || !(e.target instanceof Element)) return;
+    if (!e.target.closest("#guide-button")) return;
+    // A trusted toggle while the drawer is closed means the user opens it.
+    if (!document.querySelector("#guide[opened]")) {
+      userReopenedGuide = true;
+      log("sidebar: reopened by user; leaving it alone this page session");
+    }
+  }, true);
+
+  async function enforceSidebarCollapsed() {
+    if (!config.collapseSidebar) return log("sidebar: option off (skip)");
+    if (isWatchPage(location.href)) return log("sidebar: watch page, untouched (skip)");
+    if (userReopenedGuide) return log("sidebar: user reopened guide; respecting it (skip)");
+    const guide = document.querySelector("#guide");
+    if (!guide) return log("sidebar: no #guide on this page (skip)");
+    if (!guide.hasAttribute("opened")) return log("sidebar already collapsed");
+    const btn = document.querySelector("#guide-button[pressed='true']") ||
+      document.querySelector("#guide-button");
+    if (!btn) return log("sidebar: toggle button not found (skip)");
+    btn.click();
+    const ok = await waitUntil(() => !document.querySelector("#guide[opened]"), {
+      interval: 100,
+      timeout: 2000
+    });
+    log("sidebar collapse verified:", ok);
   }
 
   // ---- fullscreen autoplay guard (BOTH directions, ANY exit method) ----
