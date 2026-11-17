@@ -4,9 +4,13 @@
 <meta charset="utf-8">
 <title>YouTube Preferences</title>
 <style>
+:root { color-scheme: light dark; }
 body { font-family: sans-serif; max-width: 34em; padding: 1em; }
 label { display: block; margin: .45em 0; }
 .hint { color: #666; font-size: .9em; margin-top: 1em; }
+@media (prefers-color-scheme: dark) {
+  .hint { color: #999; }
+}
 </style>
 </head>
 <body>
