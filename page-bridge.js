@@ -12,6 +12,8 @@ Uses long-standing public element methods only; never minified fields. */
     GET_DRC: "DRC_RESULT",
     SET_DRC: "DRC_RESULT",
     SET_ANNOTATIONS: "ANNOTATIONS_RESULT",
+    GET_CAPTIONS: "CAPTIONS_RESULT",
+    SET_CAPTION_TRACK: "SET_CAPTION_RESULT",
     PROBE: "PROBE_RESULT"
   };
 
@@ -36,6 +38,59 @@ Uses long-standing public element methods only; never minified fields. */
       available,
       canUnload: typeof player.unloadModule === "function"
     };
+  }
+
+  // Caption tracks from getOption("captions","tracklist"): plain-JSON shape for logic.js.
+  // Field spellings defensive (vssId vs vss_id; name object vs string) — ImprovedTube proves both spellings occur across builds;
+  // matching words ("Animated") are not localized.
+  function flattenCaption(track) {
+    if (!track) return null;
+    const name = typeof track.name === "string" ?
+      track.name :
+      track.name?.simpleText ?? null;
+    return {
+      name,
+      languageCode: track.languageCode ?? null,
+      kind: track.kind ?? null,
+      vssId: track.vssId ?? track.vss_id ?? null,
+      trackName: track.trackName ?? null
+    };
+  }
+
+  /* Original audio language, live sources only — window.ytInitialPlayerResponse is STALE after SPA navigation
+  (it keeps describing the previous video), so it is never read.
+  1) the track you are hearing right now: getAudioTrack().getLanguageInfo().id ("ru.4" -> ru);
+  the sibling feature keeps the original audio selected, so current == original.
+  2) an audio track flagged isOriginal (creator-dubbed videos).
+  3) player.getPlayerResponse() — the live per-video response; only when it offers a single audio track (no ambiguity).
+  auto-dubbed videos list both languages with no original marker, so multi-entry lists are not guessed from.
+  Parse audioTrackId-shaped values: "ru.4" -> ru, "en-US.10" -> en.
+  Live probe: getAudioTrack().getLanguageInfo().id carries exactly this form
+  (the raw .id property is a prefixed protobuf blob like "251;ChE..." — rejected here).
+  Its base64 payload provably contains the language:
+  lang:"ru" on the original track,
+  lang:"en-US" plus "dubbed-aut" on the auto-dub. */
+  function parseAudioTrackLang(id) {
+    const lang = String(id ?? "").split(".")[0].split("-")[0];
+    return /^[a-z]{2,3}$/i.test(lang) ? lang.toLowerCase() : null;
+  }
+
+  function originalAudioLanguage(player) {
+    try {
+      const current = player.getAudioTrack?.();
+      const fromCurrent = parseAudioTrackLang(current?.getLanguageInfo?.()?.id ?? current?.id);
+      if (fromCurrent) return fromCurrent;
+      for (const t of player.getAvailableAudioTracks?.() ?? []) {
+        const li = t.getLanguageInfo?.();
+        if (!li || (li.isOriginal !== true && li.isOriginal !== 1)) continue;
+        const code = li.languageCode ?? parseAudioTrackLang(li.id ?? t.id);
+        if (code) return String(code).split("-")[0].toLowerCase();
+      }
+      const at = player.getPlayerResponse?.()?.captions?.
+        playerCaptionsTracklistRenderer?.audioTracks ?? [];
+      if (at.length === 1) return parseAudioTrackLang(at[0].audioTrackId);
+    } catch { /* degrade to null — selection falls back to the current subtitle language */ }
+    return null;
   }
 
   window.addEventListener("message", event => {
@@ -110,6 +165,48 @@ Uses long-standing public element methods only; never minified fields. */
           player.setDrcUserPreference(data.enabled ? 1 : 0);
           return respond(data, {
             value: Number(player.getDrcUserPreference())
+          });
+        }
+
+        case "GET_CAPTIONS": {
+          if (typeof player.getOption !== "function")
+            return respond(data, {
+              error: "getOption unavailable"
+            });
+          const list = (player.getOption("captions", "tracklist", {
+            includeAsr: true
+          }) ?? []).map(flattenCaption);
+          return respond(data, {
+            list,
+            current: flattenCaption(player.getOption("captions", "track") ?? null),
+            on: typeof player.isSubtitlesOn === "function" ? !!player.isSubtitlesOn() : null,
+            audioLanguage: originalAudioLanguage(player)
+          });
+        }
+
+        case "SET_CAPTION_TRACK": {
+          // setOption forces captions ON; restore the previous on/off state (ImprovedTube-proven).
+          const all = player.getOption?.("captions", "tracklist", {
+            includeAsr: true
+          }) ?? [];
+          const track = all.find(t => {
+            const f = flattenCaption(t);
+            return f.vssId && f.vssId === data.vssId;
+          });
+          if (!track) return respond(data, {
+            error: "Track not found"
+          });
+          if (typeof player.setOption !== "function")
+            return respond(data, {
+              error: "setOption unavailable"
+            });
+          const wasOn = typeof player.isSubtitlesOn === "function" ? !!player.isSubtitlesOn() : null;
+          player.setOption("captions", "track", track);
+          if (wasOn === false && typeof player.toggleSubtitles === "function")
+            player.toggleSubtitles();
+          return respond(data, {
+            success: true,
+            current: flattenCaption(player.getOption("captions", "track") ?? null)
           });
         }
 

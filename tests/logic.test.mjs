@@ -21,7 +21,7 @@ test("DEFAULT_CONFIG exists", () => {
   assert.equal(typeof YTLogic.DEFAULT_CONFIG, "object");
   for (const k of ["disableAutoplay", "selectOriginalAudio", "disableStableVolume",
     "disableAnnotations", "disableAmbientMode", "preventFullscreenAutoplay",
-    "collapseSidebar"])
+    "collapseSidebar", "preferOriginalCaptions"])
     assert.equal(YTLogic.DEFAULT_CONFIG[k], true);
   assert.equal(YTLogic.DEFAULT_CONFIG.debug, false);   // logging off by default
 });
@@ -107,6 +107,82 @@ test("isAmbientPrefOff", () => {
   assert.equal(YTLogic.isAmbientPrefOff("f7=100"), false); // untouched default (on)
   assert.equal(YTLogic.isAmbientPrefOff(""), false);       // no PREF yet
   assert.equal(YTLogic.isAmbientPrefOff("f7=zz!"), false); // malformed hex → don't claim
+});
+
+// ---- captions style (feature C): Animated vs Standard vs auto-generated ----
+// Vectors mirror the live video pi3hXvj2A4g.
+// The words "Animated"/"Standard" survive localization in trackName and in names.
+// The legacy auto-generated track has kind:"asr" and vssId "a.<lang>".
+test("captionTrackIsAnimated: by trackName or localized name suffix", () => {
+  assert.equal(YTLogic.captionTrackIsAnimated({ trackName: "Animated" }), true);
+  assert.equal(YTLogic.captionTrackIsAnimated({ name: "Английский - Animated" }), true);
+  assert.equal(YTLogic.captionTrackIsAnimated({ trackName: "Standard" }), false);
+  assert.equal(YTLogic.captionTrackIsAnimated({ name: "Английский (создано автоматически)" }), false);
+  assert.equal(YTLogic.captionTrackIsAnimated(null), false);
+});
+
+test("pickPreferredCaptionTrack: Standard wins over auto-generated, both over nothing", () => {
+  const E = t => ({ languageCode: "en", ...t });
+  const tracks = [
+    E({ kind: "asr", vssId: "a.en", name: "Английский (создано автоматически)" }),
+    E({ vssId: ".en.x1", trackName: "Animated", name: "Английский - Animated" }),
+    E({ vssId: ".en.x2", trackName: "Standard", name: "Английский - Standard" })
+  ];
+  assert.equal(YTLogic.pickPreferredCaptionTrack(tracks, "en", null).trackName, "Standard");
+  const noStd = tracks.filter(t => t.trackName !== "Standard");
+  assert.equal(YTLogic.pickPreferredCaptionTrack(noStd, "en", null).kind, "asr");
+  // Animated only -> null (feature skips silently)
+  assert.equal(YTLogic.pickPreferredCaptionTrack(
+    [E({ trackName: "Animated", vssId: ".en.x1" })], "en", null), null);
+  // other language has tracks, wanted language does not -> null
+  assert.equal(YTLogic.pickPreferredCaptionTrack(tracks, "fr", "de"), null);
+});
+
+// ---- preferred-language caption selection (feature D):
+// subtitles in the ORIGINAL AUDIO language win; within a language:
+// manual (non-generated) > Standard > auto-generated; Animated is never the answer.
+// Live case: Russian-audio video offering ru + en auto-generated captions —
+// YouTube picks English, we must pick Russian. ----
+test("pickPreferredCaptionTrack: original-audio language first", () => {
+  const T = (languageCode, extra) => ({ languageCode, ...extra });
+  const tracks = [
+    T("en", { kind: "asr", vssId: "a.en" }),
+    T("ru", { kind: "asr", vssId: "a.ru" }),
+    T("ru", { trackName: "Animated", vssId: ".ru.an" }),
+    T("ru", { trackName: "Standard", vssId: ".ru.st" })
+  ];
+  const pick = YTLogic.pickPreferredCaptionTrack(tracks, "ru", "en");
+  assert.equal(pick.vssId, ".ru.st");        // ru beats en, Standard beats asr
+  assert.equal(YTLogic.pickPreferredCaptionTrack(tracks, null, "en").vssId, "a.en");
+  // no ru tracks at all -> fallback language used
+  assert.equal(YTLogic.pickPreferredCaptionTrack(
+    tracks.filter(t => t.languageCode !== "ru"), "ru", "en").vssId, "a.en");
+  // nothing in either language -> null
+  assert.equal(YTLogic.pickPreferredCaptionTrack(tracks, "fr", "de"), null);
+});
+
+test("pickPreferredCaptionTrack: manual captions beat Standard", () => {
+  const tracks = [
+    { languageCode: "ru", trackName: "Standard", vssId: ".ru.st" },
+    { languageCode: "ru", vssId: ".ru", name: "Русские" }            // uploaded by creator
+  ];
+  assert.equal(YTLogic.pickPreferredCaptionTrack(tracks, "ru", "en").vssId, ".ru");
+});
+
+test("pickPreferredCaptionTrack: Animated never wins even if only option", () => {
+  assert.equal(YTLogic.pickPreferredCaptionTrack(
+    [{ languageCode: "ru", trackName: "Animated", vssId: ".ru.an" }], "ru", null), null);
+});
+
+test("pickPreferredCaptionTrack: region subtags normalize (en audio matches en-US track)", () => {
+  const tracks = [
+    { languageCode: "en-US", kind: "asr", vssId: "a.en-US" },
+    { languageCode: "ru", kind: "asr", vssId: "a.ru" }
+  ];
+  assert.equal(YTLogic.pickPreferredCaptionTrack(tracks, "en", null).languageCode, "en-US");
+  assert.equal(YTLogic.pickPreferredCaptionTrack(tracks, "ru", null).vssId, "a.ru");
+  // audio "en-US" must still match the "en-US" track
+  assert.equal(YTLogic.pickPreferredCaptionTrack(tracks, "en-US", null).languageCode, "en-US");
 });
 
 // Regression guard: content.js runs in the content-script world where the only

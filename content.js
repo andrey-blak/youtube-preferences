@@ -14,7 +14,9 @@
     shouldEnforceFullscreenPause,
     isWatchPage,
     applyAmbientPref,
-    isAmbientPrefOff
+    isAmbientPrefOff,
+    captionTrackIsAnimated,
+    pickPreferredCaptionTrack
   } = YTLogic;
 
   // ---- config (browser.storage.local, live-reloaded) ----
@@ -128,6 +130,7 @@
     if (config.selectOriginalAudio) await applyOriginalAudio();
     if (config.disableStableVolume) await applyStableVolume();
     if (config.disableAnnotations) await applyAnnotations();
+    if (config.preferOriginalCaptions) await applyOriginalCaptions();
   }
 
   // ---- autoplay: DOM attribute + click; locale-free, works today ----
@@ -293,6 +296,34 @@
       `PREF=${value};path=/;domain=youtube.com;secure;max-age=63072000`;
     log("ambient PREF bits (old-menu insurance) off:",
       isAmbientPrefOff(readPrefCookie()) ? "verified" : "write failed");
+  }
+
+  // ---- captions selection policy (features C+D) ----
+  /*
+  Prefer subtitles in the ORIGINAL AUDIO language (Russian audio => Russian subs, even when YouTube defaults to English).
+  Within a language: manual upload > Standard > auto-generated; Animated is never the answer.
+  A manual pick of a dispreferred track is re-forced on the next video.
+  No suitable track -> skip silently. */
+  async function applyOriginalCaptions() {
+    const res = await bridge.call("GET_CAPTIONS");
+    if (res.error) return log("captions probe failed:", res.error);
+    const list = res.list ?? [];
+    if (list.length === 0) return log("captions: no tracks (skip)");
+    const target = pickPreferredCaptionTrack(list, res.audioLanguage ?? null,
+      res.current?.languageCode ?? null);
+    if (!target) return log("captions: no non-animated track in original/current language (skip)");
+    if (!target.vssId) return log("captions: target track has no vssId (skip)");
+    if (res.current && res.current.vssId === target.vssId)
+      return log("captions: preferred track already selected:", target.languageCode);
+    if (!res.current && !list.some(captionTrackIsAnimated))
+      return log("captions: nothing selected, nothing Animated on offer (skip)");
+    const set = await bridge.call("SET_CAPTION_TRACK", {
+      vssId: target.vssId
+    });
+    if (set.error || !set.success) return log("setCaptionTrack failed:", set.error);
+    log("captions: selected", target.languageCode,
+      target.trackName ?? "", "(audio:", res.audioLanguage ?? "unknown", ") verified:",
+      set.current?.vssId === target.vssId && !captionTrackIsAnimated(set.current));
   }
 
   // ---- left sidebar (guide) collapse: all non-watch pages ----

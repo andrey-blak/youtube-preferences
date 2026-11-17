@@ -12,6 +12,7 @@ tested in Node via node:vm (tests/logic.test.mjs). */
     disableAmbientMode: true,
     preventFullscreenAutoplay: true,
     collapseSidebar: true,
+    preferOriginalCaptions: true,
     debug: false
   };
 
@@ -147,6 +148,59 @@ tested in Node via node:vm (tests/logic.test.mjs). */
       (bits & PREF_AMBIENT_ON) === 0;
   }
 
+  // ---- captions style: Animated vs Standard vs auto-generated (feature C) ----
+  /* Track list from player.getOption("captions","tracklist",{includeAsr:true}).
+  The literal words "Animated"/"Standard" are NOT localized — verified on a live video served in a non-English UI:
+  the language part of the name was translated, the "Animated" suffix stayed English.
+  trackName is the clean field, name is fallback.
+  Legacy auto-generated: kind === "asr" / vssId "a.<lang>".
+  Manual uploads match neither and are still a valid non-animated answer. */
+  function captionTrackIsAnimated(track) {
+    if (!track) return false;
+    return normalizeText(track.trackName).includes("animated") ||
+      normalizeText(track.name).includes("animated");
+  }
+
+  // Preference tiers inside one language (lower wins). Animated never wins at all:
+  // manual upload beats "Standard", which beats the legacy auto-generated track.
+  function captionTrackScore(track) {
+    if (captionTrackIsAnimated(track)) return -1; // excluded
+    const name = normalizeText(`${track.trackName ?? ""} ${track.name ?? ""}`);
+    if (name.includes("standard")) return 1;
+    const generated = track.kind === "asr" ||
+      String(track.vssId ?? track.vss_id ?? "").startsWith("a.");
+    if (generated) return 2;
+    return 0;
+  }
+
+  // Language matching ignores region subtags: audio "en-US" matches track "en" and vice versa.
+  function primaryLanguage(code) {
+    return String(code ?? "").split("-")[0].toLowerCase();
+  }
+
+  // Best track of one language, or null. Only explicit languages are consulted.
+  function pickCaptionTrackForLanguage(tracks, languageCode) {
+    if (!Array.isArray(tracks) || !languageCode) return null;
+    const wanted = primaryLanguage(languageCode);
+    let best = null;
+    for (const t of tracks) {
+      if (!t || primaryLanguage(t.languageCode) !== wanted) continue;
+      const score = captionTrackScore(t);
+      if (score >= 0 && (best === null || score < captionTrackScore(best))) best = t;
+    }
+    return best;
+  }
+
+  /* Feature C+D in one selection:
+  subtitles matching the ORIGINAL AUDIO language are preferred first,
+  otherwise the current/YouTube-selected language is the fallback.
+  Within the language: manual > Standard > auto-generated, Animated never wins.
+  Null result means "skip silently" (nothing suitable exists). */
+  function pickPreferredCaptionTrack(tracks, preferredLanguageCode, fallbackLanguageCode) {
+    return pickCaptionTrackForLanguage(tracks, preferredLanguageCode) ||
+      pickCaptionTrackForLanguage(tracks, fallbackLanguageCode);
+  }
+
   root.YTLogic = {
     DEFAULT_CONFIG,
     findOriginalTrack,
@@ -155,6 +209,8 @@ tested in Node via node:vm (tests/logic.test.mjs). */
     isWatchPage,
     normalizeText,
     applyAmbientPref,
-    isAmbientPrefOff
+    isAmbientPrefOff,
+    captionTrackIsAnimated,
+    pickPreferredCaptionTrack
   };
 })(typeof globalThis !== "undefined" ? globalThis : this);

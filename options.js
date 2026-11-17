@@ -7,6 +7,7 @@ const LABELS = {
   disableAmbientMode: "Ambient Mode OFF",
   preventFullscreenAutoplay: "Never auto-resume on fullscreen enter/exit",
   collapseSidebar: "Collapse the left sidebar (all non-watch pages)",
+  preferOriginalCaptions: "Prefer original subtitles (never Animated)",
   debug: "Verbose debug logging in the console"
 };
 const box = document.getElementById("prefs");
