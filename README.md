@@ -9,6 +9,7 @@ Firefox WebExtension (MV3) that keeps these YouTube preferences enforced on ever
 - Ambient Mode OFF (CSS layer that hides the `#cinematics` glow; easily disabled via Options if it ever misbehaves)
 - Fullscreen enter/exit does not auto-resume a video that was paused
 - Left sidebar (guide) collapsed automatically on all non-watch pages; once you open it manually, it is left alone until the next reload
+- Subtitles: prefers the track matching the original audio language (manual > Standard > auto-generated); Animated subtitles are never the chosen track; re-applied on every next video
 
 All preferences are checkboxes on the addon's Options page (default: all on, debug logging off). They take effect live via `browser.storage.onChanged`.
 
