@@ -11,6 +11,7 @@ tested in Node via node:vm (tests/logic.test.mjs). */
     disableAnnotations: true,
     disableAmbientMode: true,
     preventFullscreenAutoplay: true,
+    collapseSidebar: true,
     debug: false
   };
 
@@ -73,6 +74,17 @@ tested in Node via node:vm (tests/logic.test.mjs). */
 
   function shouldEnforceFullscreenPause(wasPausedBeforeToggle, isPlayingNow) {
     return wasPausedBeforeToggle === true && isPlayingNow === true;
+  }
+
+  // Video-first pages (player fills the page, guide is a drawer): the sidebar
+  // feature must leave these alone. /live is the live equivalent of /watch.
+  function isWatchPage(href) {
+    try {
+      const p = new URL(href).pathname;
+      return p === "/watch" || p.startsWith("/live/");
+    } catch {
+      return false;
+    }
   }
 
   // ---- ambient mode preference: PREF cookie, field f7, hex bitfield ----
@@ -140,6 +152,7 @@ tested in Node via node:vm (tests/logic.test.mjs). */
     findOriginalTrack,
     waitUntil,
     shouldEnforceFullscreenPause,
+    isWatchPage,
     normalizeText,
     applyAmbientPref,
     isAmbientPrefOff
