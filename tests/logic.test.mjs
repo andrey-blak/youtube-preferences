@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 
-const code = await readFile(new URL("../logic.js", import.meta.url), "utf8");
+const code = await readFile(new URL("../src/logic.js", import.meta.url), "utf8");
 // vm contexts get built-ins but no host timers/console/URL; provide them here.
 // In the browser these are real globals, so logic.js stays environment-agnostic.
 const sandbox = vm.createContext({
@@ -190,7 +190,7 @@ test("pickPreferredCaptionTrack: region subtags normalize (en audio matches en-U
 // anything else silently yields undefined and disables a feature with no error
 // (this exact bug killed stable-volume/ambient/fullscreen in v1.2.0).
 test("content.js only destructures globals that actually exist", async () => {
-  const src = await readFile(new URL("../content.js", import.meta.url), "utf8");
+  const src = await readFile(new URL("../src/content.js", import.meta.url), "utf8");
   const exposed = new Set(["YTLogic"]); // set by logic.js; browser.* is an extension API
   const stmts = src.match(/const \{[^}]*\} = globalThis;/g) ?? [];
   assert.ok(stmts.length > 0, "expected at least one globalThis destructure");
