@@ -103,6 +103,8 @@
   }
 
   async function applyAll(reason) {
+    // A stale intent must never survive into a new page/video: it is consumed by the next play event or dropped here, whichever comes first.
+    playIntent = false;
     // Non-watch pages (home, search) have no player: bail fast
     if (!getPlayer() &&
       !(await waitUntil(() => !!getPlayer(), {
@@ -145,6 +147,42 @@
       log("autoplay already off");
     }
   }
+
+  // ---- click-through autoplay: the NEW video itself starts playing ----
+  /* The autonav toggle above only governs the NEXT video.
+  Arriving by click from another watch page starts this video unconditionally — a different mechanism, blocked here:
+  every play without a fresh user play-intent is paused.
+  Intent = trusted pointerdown on player controls/video or the k/space keys (never while typing). */
+  let playIntent = false;
+
+  function markPlayIntent(event) {
+    if (!config.disableAutoplay) return;
+    const viaKey = event.type === "keydown" &&
+      (event.key === "k" || event.key === " ") && !event.repeat &&
+      !(event.target instanceof Element &&
+        event.target.closest("input, textarea, [contenteditable]"));
+    const viaControl = event.type === "pointerdown" && event.isTrusted &&
+      event.target instanceof Element && !!event.target.closest(
+        "video.html5-main-video, .ytp-play-button, .ytp-large-play-button, .ytp-chrome-controls");
+    if (!viaKey && !viaControl) return;
+    playIntent = true;
+    log("play intent recorded");
+  }
+  document.addEventListener("keydown", markPlayIntent, true);
+  document.addEventListener("pointerdown", markPlayIntent, true);
+
+  // play does not bubble — capture phase on document still sees it.
+  document.addEventListener("play", event => {
+    if (!config.disableAutoplay) return;
+    const v = event.target;
+    if (!(v instanceof HTMLVideoElement)) return;
+    if (playIntent) {
+      playIntent = false;
+      return log("autoplay: user-initiated play allowed");
+    }
+    v.pause();
+    log("autoplay blocked: playback started without user intent");
+  }, true);
 
   // ---- original audio ----
   async function applyOriginalAudio() {
