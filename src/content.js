@@ -16,7 +16,9 @@
     applyAmbientPref,
     isAmbientPrefOff,
     captionTrackIsAnimated,
-    pickPreferredCaptionTrack
+    pickPreferredCaptionTrack,
+    decideCaptions,
+    LANGUAGE_CATALOG
   } = YTLogic;
 
   // ---- config (browser.storage.local, live-reloaded) ----
@@ -131,6 +133,9 @@
     if (config.disableStableVolume) await applyStableVolume();
     if (config.disableAnnotations) await applyAnnotations();
     if (config.preferOriginalCaptions) await applyOriginalCaptions();
+    // Visibility policy runs AFTER track selection: the picker restores the previous on/off state, so the policy must be the final word on each video.
+    const capState = await bridge.call("GET_CAPTIONS");
+    await applyCaptionsPolicy(capState);
   }
 
   // ---- autoplay: DOM attribute + click; locale-free, works today ----
@@ -324,6 +329,26 @@
     log("captions: selected", target.languageCode,
       target.trackName ?? "", "(audio:", res.audioLanguage ?? "unknown", ") verified:",
       set.current?.vssId === target.vssId && !captionTrackIsAnimated(set.current));
+  }
+
+  // ---- captions visibility policy ----
+  /* Per-language show/hide on top of track selection.
+  Keyed on two candidate languages, audio first: an audio rule (ru=off) wins even when the only caption track is another language (en).
+  A subtitle-track rule (tlh=on) catches languages that are never audio. "keep" leaves YouTube's own memory alone. */
+  async function applyCaptionsPolicy(state) {
+    const pol = config.captionsPolicy;
+    if (!pol) return log("captions policy: no config (skip)");
+    if (!Array.isArray(state.list) || state.list.length === 0)
+      return log("captions policy: no caption tracks on this video (skip)");
+    const trackLang = state.current?.languageCode ?? null;
+    const decision = decideCaptions(pol, state.audioLanguage, trackLang, LANGUAGE_CATALOG);
+    if (decision === "keep") return log("captions policy: keep (untouched)");
+    const r = await bridge.call("SET_CAPTIONS_VISIBLE", {
+      enabled: decision === "on"
+    });
+    if (r.error) return log("setCaptionsVisible failed:", r.error);
+    log("captions policy:", decision, "(audio:", state.audioLanguage ?? "?",
+      "/subs:", trackLang ?? "?", ") verified:", r.visible === (decision === "on"));
   }
 
   // ---- left sidebar (guide) collapse: all non-watch pages ----

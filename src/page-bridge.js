@@ -12,6 +12,7 @@ Uses long-standing public element methods only; never minified fields. */
     GET_DRC: "DRC_RESULT",
     SET_DRC: "DRC_RESULT",
     SET_ANNOTATIONS: "ANNOTATIONS_RESULT",
+    SET_CAPTIONS_VISIBLE: "CAPTIONS_VISIBLE_RESULT",
     GET_CAPTIONS: "CAPTIONS_RESULT",
     SET_CAPTION_TRACK: "SET_CAPTION_RESULT",
     PROBE: "PROBE_RESULT"
@@ -181,6 +182,18 @@ Uses long-standing public element methods only; never minified fields. */
             current: flattenCaption(player.getOption("captions", "track") ?? null),
             on: typeof player.isSubtitlesOn === "function" ? !!player.isSubtitlesOn() : null,
             audioLanguage: originalAudioLanguage(player)
+          });
+        }
+
+        case "SET_CAPTIONS_VISIBLE": {
+          // toggleSubtitles is the exact CC-button action: locale-free, and idempotent behind the isSubtitlesOn() guard.
+          if (typeof player.isSubtitlesOn !== "function" || typeof player.toggleSubtitles !== "function")
+            return respond(data, {
+              error: "subtitles toggle unavailable"
+            });
+          if (!!player.isSubtitlesOn() !== !!data.enabled) player.toggleSubtitles();
+          return respond(data, {
+            visible: !!player.isSubtitlesOn()
           });
         }
 
