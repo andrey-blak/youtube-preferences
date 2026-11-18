@@ -13,6 +13,7 @@ tested in Node via node:vm (tests/logic.test.mjs). */
     preventFullscreenAutoplay: true,
     collapseSidebar: true,
     preferOriginalCaptions: true,
+    captionsPolicy: { default: "keep", unlisted: "keep", overrides: {} },
     debug: false
   };
 
@@ -201,6 +202,40 @@ tested in Node via node:vm (tests/logic.test.mjs). */
       pickCaptionTrackForLanguage(tracks, fallbackLanguageCode);
   }
 
+  /* Per-language captions policy.
+  YouTube's subtitle-translation catalog, captured from a live playerResponse — bare primary subtags only, membership decides default-vs-unlisted routing.
+  Keys on TWO candidate languages in priority order:
+  1) explicit override for the AUDIO language — "russian audio = off" must hide subtitles even when only English captions exist;
+  2) explicit override for the SUBTITLE-track language — catches subtitle-only languages like Klingon (audio is never Klingon);
+  3) default when either language is a catalogued code;
+  4) unlisted when neither is; keep when nothing is known. */
+  const LANGUAGE_CATALOG = Object.freeze({
+    aa: 1, ab: 1, af: 1, ak: 1, am: 1, ar: 1, as: 1, ay: 1, az: 1, ba: 1, be: 1, bg: 1, bho: 1,
+    bn: 1, bo: 1, br: 1, bs: 1, ca: 1, ceb: 1, co: 1, crs: 1, cs: 1, cy: 1, da: 1, de: 1, dv: 1,
+    dz: 1, ee: 1, el: 1, en: 1, eo: 1, es: 1, et: 1, eu: 1, fa: 1, fi: 1, fil: 1, fj: 1, fo: 1,
+    fr: 1, fy: 1, ga: 1, gaa: 1, gd: 1, gl: 1, gn: 1, gu: 1, gv: 1, ha: 1, haw: 1, hi: 1, hmn: 1,
+    hr: 1, ht: 1, hu: 1, hy: 1, id: 1, ig: 1, is: 1, it: 1, iu: 1, iw: 1, ja: 1, jv: 1, ka: 1,
+    kha: 1, kk: 1, kl: 1, km: 1, kn: 1, ko: 1, kri: 1, ku: 1, ky: 1, la: 1, lb: 1, lg: 1, ln: 1,
+    lo: 1, lt: 1, lua: 1, luo: 1, lv: 1, mfe: 1, mg: 1, mi: 1, mk: 1, ml: 1, mn: 1, mr: 1, ms: 1,
+    mt: 1, my: 1, ne: 1, new: 1, nl: 1, no: 1, nso: 1, ny: 1, oc: 1, om: 1, or: 1, os: 1, pa: 1,
+    pam: 1, pl: 1, ps: 1, pt: 1, qu: 1, rn: 1, ro: 1, ru: 1, rw: 1, sa: 1, sd: 1, sg: 1, si: 1,
+    sk: 1, sl: 1, sm: 1, sn: 1, so: 1, sq: 1, sr: 1, ss: 1, st: 1, su: 1, sv: 1, sw: 1, ta: 1,
+    te: 1, tg: 1, th: 1, ti: 1, tk: 1, tlh: 1, tn: 1, to: 1, tr: 1, ts: 1, tt: 1, tum: 1, ug: 1,
+    uk: 1, ur: 1, uz: 1, ve: 1, vi: 1, war: 1, wo: 1, xh: 1, yi: 1, yo: 1, zh: 1, zu: 1
+  });
+
+  function decideCaptions(policy, audioLanguageCode, trackLanguageCode, catalog) {
+    const audio = audioLanguageCode ? primaryLanguage(audioLanguageCode) : null;
+    const track = trackLanguageCode ? primaryLanguage(trackLanguageCode) : null;
+    const ovr = (policy && policy.overrides) || {};
+    if (audio && (ovr[audio] === "on" || ovr[audio] === "off")) return ovr[audio];
+    if (track && (ovr[track] === "on" || ovr[track] === "off")) return ovr[track];
+    const known = (c) => c && Object.prototype.hasOwnProperty.call(catalog, c);
+    if (known(audio) || known(track)) return policy.default ?? "keep";
+    if (audio || track) return policy.unlisted ?? "keep";
+    return "keep";
+  }
+
   root.YTLogic = {
     DEFAULT_CONFIG,
     findOriginalTrack,
@@ -211,6 +246,8 @@ tested in Node via node:vm (tests/logic.test.mjs). */
     applyAmbientPref,
     isAmbientPrefOff,
     captionTrackIsAnimated,
-    pickPreferredCaptionTrack
+    pickPreferredCaptionTrack,
+    LANGUAGE_CATALOG,
+    decideCaptions
   };
 })(typeof globalThis !== "undefined" ? globalThis : this);

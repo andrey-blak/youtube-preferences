@@ -11,6 +11,21 @@ label { display: block; margin: .45em 0; }
 @media (prefers-color-scheme: dark) {
   .hint { color: #999; }
 }
+fieldset { margin-top: 1.2em; border: 1px solid #999; border-radius: .4em; padding: .6em .8em; }
+legend { padding: 0 .4em; }
+.policy-row { display: flex; align-items: center; gap: .6em; margin: .35em 0; }
+.policy-row .lang-name { flex: 1; }
+.policy-subhead { margin: .7em 0 .2em; font-weight: bold; }
+.policy-row button, .dialog-buttons button { margin-left: .3em; }
+dialog { border-radius: .5em; padding: 1em; max-width: 24em; width: 90%; }
+dialog::backdrop { background: rgba(0,0,0,.4); }
+dialog input[type="search"] { width: 100%; box-sizing: border-box; margin-bottom: .5em; }
+#add-lang-list { height: 50vh; overflow-y: auto; border: 1px solid #888; padding: .3em .6em; margin-bottom: .7em; }
+.lang-option { display: flex; align-items: baseline; gap: .4em; margin: .15em 0; }
+.lang-option input { margin: 0; }
+.lang-option.existing { opacity: .45; }
+.dialog-buttons { display: flex; justify-content: flex-end; gap: .5em; }
+[hidden] { display: none !important; }
 </style>
 </head>
 <body>

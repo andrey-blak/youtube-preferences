@@ -185,6 +185,41 @@ test("pickPreferredCaptionTrack: region subtags normalize (en audio matches en-U
   assert.equal(YTLogic.pickPreferredCaptionTrack(tracks, "en-US", null).languageCode, "en-US");
 });
 
+test("decideCaptions: audio rule beats subtitle rule; either feeds default/unlisted", () => {
+  const P = YTLogic;
+  const pol = {
+    default: "off",
+    unlisted: "on",
+    overrides: { ru: "off", en: "on", tlh: "on" }
+  };
+  assert.equal(P.decideCaptions(pol, "ru", "en", P.LANGUAGE_CATALOG), "off"); // Russian audio + English subs: audio rule wins
+  assert.equal(P.decideCaptions(pol, "en", "en", P.LANGUAGE_CATALOG), "on");  // English audio + English subs
+  assert.equal(P.decideCaptions(pol, "de", "tlh", P.LANGUAGE_CATALOG), "on"); // Klingon subtitles, no audio rule
+  assert.equal(P.decideCaptions(pol, null, "tlh", P.LANGUAGE_CATALOG), "on"); // audio language unknown still works via subs
+  assert.equal(P.decideCaptions(pol, "uk", "fr", P.LANGUAGE_CATALOG), "off"); // both catalogued -> default
+  assert.equal(P.decideCaptions(pol, "zz", "qq", P.LANGUAGE_CATALOG), "on");  // both unknown -> unlisted
+  assert.equal(P.decideCaptions(pol, "zz", "ru", P.LANGUAGE_CATALOG), "off"); // subs catalogued w/ override -> rule 2
+  assert.equal(P.decideCaptions(pol, "zz", "de", P.LANGUAGE_CATALOG), "off"); // subs catalogued, no override -> default
+  assert.equal(P.decideCaptions(pol, null, null, P.LANGUAGE_CATALOG), "keep"); // nothing to key on
+  assert.equal(P.decideCaptions({ default: "keep", unlisted: "keep", overrides: {} }, "en", "en", P.LANGUAGE_CATALOG), "keep");
+});
+
+test("LANGUAGE_CATALOG: frozen 155-entry code list incl. Klingon", () => {
+  const c = YTLogic.LANGUAGE_CATALOG;
+  assert.ok(Object.prototype.hasOwnProperty.call(c, "tlh"));
+  assert.ok(Object.prototype.hasOwnProperty.call(c, "ru"));
+  assert.equal(Object.keys(c).length, 155);
+  for (const k of Object.keys(c)) assert.equal(k, k.toLowerCase().split("-")[0]);
+});
+
+test("DEFAULT_CONFIG has captionsPolicy shaped keep/keep/{}", () => {
+  const p = YTLogic.DEFAULT_CONFIG.captionsPolicy;
+  assert.equal(p.default, "keep");
+  assert.equal(p.unlisted, "keep");
+  // YTLogic objects live in a vm realm — prototype-sensitive deepEqual would lie here
+  assert.equal(Object.keys(p.overrides).length, 0);
+});
+
 // Regression guard: content.js runs in the content-script world where the only
 // global logic.js contributes is YTLogic. A `const {X} = globalThis` for
 // anything else silently yields undefined and disables a feature with no error
