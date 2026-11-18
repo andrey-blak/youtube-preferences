@@ -21,7 +21,7 @@
     LANGUAGE_CATALOG
   } = YTLogic;
 
-  // ---- config (browser.storage.local, live-reloaded) ----
+  // ---- config (browser.storage.sync, live-reloaded) ----
   let config = {
     ...DEFAULT_CONFIG
   };
@@ -479,13 +479,13 @@
   // ---- init ----
   async function init() {
     injectBridge();
-    const stored = await browser.storage.local.get(DEFAULT_CONFIG);
+    const stored = await browser.storage.sync.get(DEFAULT_CONFIG);
     config = {
       ...DEFAULT_CONFIG,
       ...stored
     };
     browser.storage.onChanged.addListener((changes, area) => {
-      if (area !== "local") return;
+      if (area !== "sync") return;
       for (const [k, v] of Object.entries(changes))
         if (k in DEFAULT_CONFIG) config[k] = v.newValue ?? DEFAULT_CONFIG[k];
       requestApply("config-change");
