@@ -12,7 +12,7 @@ Firefox WebExtension (MV3) that keeps these YouTube preferences enforced on ever
 - Subtitles: prefers the track matching the original audio language (manual > Standard > auto-generated); Animated subtitles are never the chosen track; re-applied on every next video
 - Per-language subtitle visibility: Default/Unlisted selects plus per-language On/Off overrides (audio-language rules beat subtitle-language rules); "Keep" leaves YouTube's own memory alone
 
-All preferences are checkboxes on the addon's Options page (default: all on, debug logging off). They take effect live via `browser.storage.onChanged`.
+All preferences are checkboxes on the addon's Options page (default: all on, debug logging off). Settings are stored in `browser.storage.sync`: with a Firefox Sync account they follow you across devices (on Sync's own schedule, not instantly); without one they simply persist locally. Changes apply immediately via `browser.storage.onChanged`.
 
 ## Install
 

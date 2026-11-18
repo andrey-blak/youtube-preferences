@@ -39,7 +39,7 @@ function makeChoice(value, values, labels) {
   return sel;
 }
 
-browser.storage.local.get(YTLogic.DEFAULT_CONFIG).then(stored => {
+browser.storage.sync.get(YTLogic.DEFAULT_CONFIG).then(stored => {
   // ---- boolean feature checkboxes ----
   const box = document.getElementById("prefs");
   for (const key of Object.keys(YTLogic.DEFAULT_CONFIG)) {
@@ -49,7 +49,7 @@ browser.storage.local.get(YTLogic.DEFAULT_CONFIG).then(stored => {
     input.type = "checkbox";
     input.checked = !!stored[key];
     input.addEventListener("change", async () => {
-      await browser.storage.local.set({
+      await browser.storage.sync.set({
         [key]: input.checked
       });
       console.info("[YT Prefs] saved", key, input.checked);
@@ -74,7 +74,7 @@ let policy = null;
 const rowsBox = () => document.getElementById("policy-overrides");
 
 async function savePolicy() {
-  await browser.storage.local.set({
+  await browser.storage.sync.set({
     captionsPolicy: policy
   });
   console.info("[YT Prefs] saved captionsPolicy", JSON.stringify(policy));
