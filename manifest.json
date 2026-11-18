@@ -8,6 +8,10 @@
   },
   "description": "Disables unwanted YouTube playback features.",
   "permissions": ["storage"],
+  "host_permissions": [
+    "*://www.youtube.com/*",
+    "*://youtube.com/*"
+  ],
   "background": {
     "scripts": [
       "background.js"
