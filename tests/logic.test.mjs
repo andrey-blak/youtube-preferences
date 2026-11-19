@@ -220,6 +220,28 @@ test("DEFAULT_CONFIG has captionsPolicy shaped keep/keep/{}", () => {
   assert.equal(Object.keys(p.overrides).length, 0);
 });
 
+// ---- options page structure guards (UI analog of "no setting may hide itself") ----
+test("options.js shows every boolean setting exactly once, grouped and labeled", async () => {
+  const src = await readFile(new URL("../src/options.js", import.meta.url), "utf8");
+  const groupsBlock = src.match(/const GROUPS = \[[\s\S]*?\];/);
+  assert.ok(groupsBlock, "const GROUPS = [...] not found in options.js");
+  const labelsBlock = src.match(/const LABELS = \{[\s\S]*?\};/);
+  assert.ok(labelsBlock, "const LABELS = {...} not found in options.js");
+  const allKeys = Object.keys(YTLogic.DEFAULT_CONFIG);
+  const boolKeys = allKeys.filter(k => typeof YTLogic.DEFAULT_CONFIG[k] === "boolean");
+  const referenced = [];
+  for (const m of groupsBlock[0].matchAll(/keys:\s*\[([^\]]*)\]/g))
+    referenced.push(...(m[1].match(/"([^"]+)"/g) || []).map(s => s.slice(1, -1)));
+  for (const key of boolKeys) {
+    assert.equal(referenced.filter(k => k === key).length, 1,
+      `${key} must appear exactly once in GROUPS`);
+    assert.match(labelsBlock[0], new RegExp("(^|[,{\\s])" + key + ":"),
+      `${key} missing from LABELS`);
+  }
+  for (const r of referenced)
+    assert.ok(allKeys.includes(r), `GROUPS references unknown setting "${r}"`);
+});
+
 // Regression guard: content.js runs in the content-script world where the only
 // global logic.js contributes is YTLogic. A `const {X} = globalThis` for
 // anything else silently yields undefined and disables a feature with no error
