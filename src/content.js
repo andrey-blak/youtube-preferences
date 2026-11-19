@@ -110,6 +110,11 @@
   async function applyAll(reason) {
     // A stale intent must never survive into a new page/video: it is consumed by the next play event or dropped here, whichever comes first.
     playIntent = false;
+    // Manual caption respect is scoped to one video: any real navigation (or fresh load) starts clean.
+    if (reason === "init" || reason === "navigate" || reason === "popstate" || reason === "player-replaced") {
+      captionVisibilityChoice = false;
+      captionTrackChoice = false;
+    }
     // DOM-only and player-independent: must run before the watch-page bail.
     await enforceSidebarCollapsed();
     // Non-watch pages (home, search) have no player: bail fast
@@ -303,6 +308,35 @@
       isAmbientPrefOff(readPrefCookie()) ? "verified" : "write failed");
   }
 
+  // ---- respect manual caption choices (per video) ----
+  /* Turning CC on lets YouTube auto-pick a track (interface-language default) — that is not a user choice, so the track picker keeps enforcing.
+  A trusted click on the CC button = a visibility choice: the policy stands down for this video.
+  A trusted click on any settings-menu row = an explicit pick: picker and policy both stand down until the next video.
+  Current builds dropped the ytp-caption-track element, so .ytp-menuitem is the stable menu signal. */
+  let captionVisibilityChoice = false,
+    captionTrackChoice = false;
+
+  document.addEventListener("click", e => {
+    if (e.isTrusted !== true || !(e.target instanceof Element)) return;
+    if (e.target.closest(".ytp-subtitles-button")) {
+      captionVisibilityChoice = true;
+      log("captions: CC toggled by user; visibility respected this video");
+    } else if (e.target.closest(".ytp-menuitem")) {
+      captionVisibilityChoice = captionTrackChoice = true;
+      log("captions: menu choice by user; captions untouched this video");
+    }
+  }, true);
+
+  // Keyboard caption toggles (t / c) are the same visibility choice as clicking CC.
+  document.addEventListener("keydown", e => {
+    if (e.isTrusted !== true || e.repeat) return;
+    const k = String(e.key).toLowerCase();
+    if (k !== "t" && k !== "c") return;
+    if (e.target instanceof Element && e.target.closest("input, textarea, [contenteditable]")) return;
+    captionVisibilityChoice = true;
+    log("captions: keyboard toggle by user; visibility respected this video");
+  }, true);
+
   // ---- captions selection policy (features C+D) ----
   /*
   Prefer subtitles in the ORIGINAL AUDIO language (Russian audio => Russian subs, even when YouTube defaults to English).
@@ -310,6 +344,7 @@
   A manual pick of a dispreferred track is re-forced on the next video.
   No suitable track -> skip silently. */
   async function applyOriginalCaptions() {
+    if (captionTrackChoice) return log("captions: user track choice respected this video (skip)");
     const res = await bridge.call("GET_CAPTIONS");
     if (res.error) return log("captions probe failed:", res.error);
     const list = res.list ?? [];
@@ -338,6 +373,7 @@
   async function applyCaptionsPolicy(state) {
     const pol = config.captionsPolicy;
     if (!pol) return log("captions policy: no config (skip)");
+    if (captionVisibilityChoice) return log("captions policy: user choice respected this video (skip)");
     if (!Array.isArray(state.list) || state.list.length === 0)
       return log("captions policy: no caption tracks on this video (skip)");
     const trackLang = state.current?.languageCode ?? null;
@@ -464,6 +500,8 @@
   // ---- triggers: navigation + actual player replacement only ----
   document.addEventListener("yt-navigate-finish", () => requestApply("navigate"));
   window.addEventListener("popstate", () => requestApply("popstate"));
+  // YouTube decides the track itself when the user enables CC (often a translated default): re-assert on that event, not only on navigation.
+  document.addEventListener("captionschanged", () => requestApply("captions-changed"), true);
   let lastPlayerRef = null;
   new MutationObserver(() => {
     const p = getPlayer();
