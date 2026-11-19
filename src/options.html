@@ -4,34 +4,44 @@
 <meta charset="utf-8">
 <title>YouTube Preferences</title>
 <style>
+/* Follow the browser light/dark theme: color-scheme lets the UA pick the
+   canvas background, text and form controls; only the explicit colors below
+   need a media-query counterpart. */
 :root { color-scheme: light dark; }
-body { font-family: sans-serif; max-width: 34em; padding: 1em; }
+body { font-family: sans-serif; max-width: 46em; padding: 1em; }
 label { display: block; margin: .45em 0; }
 .hint { color: #666; font-size: .9em; margin-top: 1em; }
 @media (prefers-color-scheme: dark) {
   .hint { color: #999; }
+  .advanced-title { border-top-color: #555; }
 }
-fieldset { margin-top: 1.2em; border: 1px solid #999; border-radius: .4em; padding: .6em .8em; }
-legend { padding: 0 .4em; }
-.policy-row { display: flex; align-items: center; gap: .6em; margin: .35em 0; }
-.policy-row .lang-name { flex: 1; }
-.policy-subhead { margin: .7em 0 .2em; font-weight: bold; }
-.policy-row button, .dialog-buttons button { margin-left: .3em; }
-dialog { border-radius: .5em; padding: 1em; max-width: 24em; width: 90%; }
+.group-title { margin: 1.6em 0 .5em; font-size: 1.05em; }
+.advanced-title { margin-top: 2.6em; padding-top: 1.2em; border-top: 1px solid #bbb; color: #666; }
+.check-row { display: block; }
+/* Two-column grid: labels left, controls in one aligned column. */
+.control-row { display: grid; grid-template-columns: 1fr max-content; justify-items: start; align-items: center; gap: 1em; margin: .35em 0; }
+.control-row label { margin: 0; }
+/* Overrides table: flexible name, compact selector, narrow remove column. */
+.override-row { display: grid; grid-template-columns: 1fr 6.5em 2em; justify-items: start; align-items: center; gap: 1em; margin: .3em 0; }
+.override-row button { font-size: .8em; padding: 0 .35em; }
+#policy-overrides { max-height: 22em; overflow-y: auto; scrollbar-gutter: stable; padding: .35em .5em; margin: .3em 0 .6em; border: 1px solid ButtonBorder; border-radius: .5em; }
+select { font: inherit; padding: .1em .4em; }
+button { font: inherit; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+dialog { border-radius: .5em; padding: 1em; width: 26em; max-width: 90%; }
 dialog::backdrop { background: rgba(0,0,0,.4); }
-dialog input[type="search"] { width: 100%; box-sizing: border-box; margin-bottom: .5em; }
-#add-lang-list { height: 50vh; overflow-y: auto; border: 1px solid #888; padding: .3em .6em; margin-bottom: .7em; }
+dialog input[type="search"] { width: 100%; box-sizing: border-box; margin-bottom: .5em; font: inherit; }
+#add-lang-list { height: 50vh; overflow-y: auto; border: 1px solid ButtonBorder; border-radius: .5em; padding: .3em .6em; margin-bottom: .7em; }
 .lang-option { display: flex; align-items: baseline; gap: .4em; margin: .15em 0; }
 .lang-option input { margin: 0; }
-.lang-option.existing { opacity: .45; }
-.dialog-buttons { display: flex; justify-content: flex-end; gap: .5em; }
+.dialog-buttons { display: flex; flex-direction: row-reverse; justify-content: flex-start; gap: .5em; }
 [hidden] { display: none !important; }
 </style>
 </head>
 <body>
 <h2>YouTube Preferences</h2>
 <div id="prefs"></div>
-<p class="hint">Changes apply immediately.</p>
+<p class="hint">Changes are applied immediately.</p>
 <script src="logic.js"></script>
 <script src="options.js"></script>
 </body>
