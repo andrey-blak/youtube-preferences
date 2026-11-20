@@ -282,6 +282,44 @@ function createDialogShell() {
   form.append(h, f, list, btns);
   dlg.append(form);
   document.body.append(dlg);
+  dlg.setAttribute("aria-label", "Add languages");
+
+  // Keyboard model (listbox conventions): the checkbox list is not a native radio group,
+  // so arrows move focus between VISIBLE options explicitly; Space toggles natively once an option is focused.
+  const visibleBoxes = () => (dlg._boxes || []).filter(b => !b.lab.hidden);
+  const focusBox = b => {
+    if (!b) return;
+    b.cb.focus();
+    b.lab.scrollIntoView({
+      block: "nearest"
+    });
+  };
+  f.addEventListener("keydown", e => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      focusBox(visibleBoxes()[0]);
+    }
+  });
+  list.addEventListener("keydown", e => {
+    const v = visibleBoxes();
+    if (!v.length) return;
+    const idx = v.findIndex(b => b.cb === e.target);
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      focusBox(idx < 0 ? v[0] : v[Math.min(idx + 1, v.length - 1)]);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      if (idx <= 0) f.focus();
+      else focusBox(v[idx - 1]);
+    } else if (e.key === "Home") {
+      e.preventDefault();
+      focusBox(v[0]);
+    } else if (e.key === "End") {
+      e.preventDefault();
+      focusBox(v[v.length - 1]);
+    }
+  });
+
   dlg.addEventListener("close", async () => {
     if (dlg.returnValue !== "add") return;
     const chosen = (dlg._boxes || []).filter(b => b.cb.checked).map(b => b.cb.value);
