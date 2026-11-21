@@ -38,22 +38,43 @@ function langName(code) {
   return n && n !== code ? n + " (" + code + ")" : code;
 }
 
-const POLICY_VALUES = ["keep", "on", "off"];
-const POLICY_VALUE_LABELS = {
-  keep: "Keep YouTube's setting",
-  on: "Show",
-  off: "Hide"
-};
-function makeChoice(value, values, labels) {
-  const sel = document.createElement("select");
-  for (const v of values) {
-    const o = document.createElement("option");
-    o.value = v;
-    o.textContent = labels ? labels[v] : v;
-    if (v === value) o.selected = true;
-    sel.append(o);
-  }
-  return sel;
+// ---- segmented radio control ----
+/* One click per change, from native radio inputs: arrow-key navigation, tab order, and group semantics are platform behavior, not ARIA theater.
+Native radio groups treat all four arrows as intra-group — overridden here: left/right stay intra-group, up/down walk to the adjacent segment control in DOM order.
+State = pill background + bold (uniform, so widths never shift) + focus outline; never weight/color changes on toggle.
+The native radio is invisible-but-focusable (opacity:0), the text span is the painted segment. */
+function makeSegment(groupName, current, options, onPick) {
+  const seg = document.createElement("span");
+  seg.className = "segment";
+  options.forEach((o, idx) => {
+    const label = document.createElement("label");
+    const input = document.createElement("input");
+    input.type = "radio";
+    input.name = groupName;
+    input.value = o.value;
+    input.checked = o.value === current;
+    const text = document.createElement("span");
+    text.textContent = o.label;
+    input.addEventListener("change", () => {
+      if (input.checked) onPick(o.value);
+    });
+    input.addEventListener("keydown", e => {
+      if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+      e.preventDefault();
+      const groups = [...document.querySelectorAll(".segment")];
+      const next = groups[groups.indexOf(seg) + (e.key === "ArrowDown" ? 1 : -1)];
+      if (!next) return;
+      const inputs = next.querySelectorAll("input");
+      const target = inputs[idx] || next.querySelector("input:checked") || inputs[0];
+      target.focus();
+      target.closest("label").scrollIntoView({
+        block: "nearest"
+      });
+    });
+    label.append(input, text);
+    seg.append(label);
+  });
+  return seg;
 }
 
 function controlRow(text, control) {
@@ -69,6 +90,8 @@ browser.storage.sync.get(YTLogic.DEFAULT_CONFIG).then(stored => {
   policy = normalizePolicy(stored.captionsPolicy);
   renderAll(stored);
 });
+
+const POLICY_VALUES = ["keep", "on", "off"];
 
 function normalizePolicy(p) {
   return {
@@ -122,20 +145,29 @@ async function savePolicy() {
   console.info("[YT Prefs] saved captionsPolicy", JSON.stringify(policy));
 }
 
+// Options order fixed by user: Show before Hide everywhere.
+const RULE_OPTIONS = [
+  { value: "keep", label: "Use YouTube defaults" },
+  { value: "on", label: "Show" },
+  { value: "off", label: "Hide" }
+];
+const TOGGLE_OPTIONS = [
+  { value: "on", label: "Show" },
+  { value: "off", label: "Hide" }
+];
+
 function makePolicySelects() {
   const frag = document.createDocumentFragment();
-  const def = makeChoice(policy.default, POLICY_VALUES, POLICY_VALUE_LABELS);
-  def.addEventListener("change", async () => {
-    policy.default = def.value;
-    await savePolicy();
-  });
-  frag.append(controlRow("Known languages without a rule:", def));
-  const unl = makeChoice(policy.unlisted, POLICY_VALUES, POLICY_VALUE_LABELS);
-  unl.addEventListener("change", async () => {
-    policy.unlisted = unl.value;
-    await savePolicy();
-  });
-  frag.append(controlRow("Unlisted / unknown languages:", unl));
+  frag.append(controlRow("Known languages without a rule:",
+    makeSegment("pol-default", policy.default, RULE_OPTIONS, async v => {
+      policy.default = v;
+      await savePolicy();
+    })));
+  frag.append(controlRow("Unlisted / unknown languages:",
+    makeSegment("pol-unlisted", policy.unlisted, RULE_OPTIONS, async v => {
+      policy.unlisted = v;
+      await savePolicy();
+    })));
   return frag;
 }
 
@@ -177,12 +209,8 @@ function renderOverrideRows() {
     const name = document.createElement("span");
     name.className = "lang-name";
     name.textContent = langName(code);
-    const sel = makeChoice(policy.overrides[code], ["on", "off"], {
-      on: "Show",
-      off: "Hide"
-    });
-    sel.addEventListener("change", async () => {
-      policy.overrides[code] = sel.value;
+    const seg = makeSegment("ovr-" + code, policy.overrides[code], TOGGLE_OPTIONS, async v => {
+      policy.overrides[code] = v;
       await savePolicy();
     });
     const rm = document.createElement("button");
@@ -193,7 +221,7 @@ function renderOverrideRows() {
       await savePolicy();
       renderOverrideRows();
     });
-    row.append(name, sel, rm);
+    row.append(name, seg, rm);
     rows.append(row);
   }
 }

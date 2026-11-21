@@ -10,9 +10,9 @@ Firefox WebExtension (MV3) that keeps these YouTube preferences enforced on ever
 - Fullscreen enter/exit does not auto-resume a video that was paused
 - Left sidebar (guide) collapsed automatically on all non-watch pages; once you open it manually, it is left alone until the next reload
 - Subtitles: prefers the track matching the original audio language (manual > Standard > auto-generated); Animated subtitles are never the chosen track; re-applied on every next video
-- Per-language subtitle visibility: Default/Unlisted selects plus per-language On/Off overrides (audio-language rules beat subtitle-language rules); "Keep" leaves YouTube's own memory alone
+- Per-language subtitle visibility: default (YouTube defaults / Show / Hide) plus per-language Show|Hide overrides
 
-All preferences are checkboxes on the addon's Options page. Changes apply immediately. Settings are synced between devices via Firefox Sync.
+All changes are applied immediately. Settings are synced between devices via Firefox Sync.
 
 ## Install
 

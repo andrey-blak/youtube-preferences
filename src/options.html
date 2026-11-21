@@ -9,22 +9,32 @@
    need a media-query counterpart. */
 :root { color-scheme: light dark; }
 body { font-family: sans-serif; max-width: 46em; padding: 1em; }
-label { display: block; margin: .45em 0; }
+h2 { margin-top: .2em; }
+label { display: block; margin: .25em 0; }
 .hint { color: #666; font-size: .9em; margin-top: 1em; }
 @media (prefers-color-scheme: dark) {
   .hint { color: #999; }
   .advanced-title { border-top-color: #555; }
 }
-.group-title { margin: 1.6em 0 .5em; font-size: 1.05em; }
-.advanced-title { margin-top: 2.6em; padding-top: 1.2em; border-top: 1px solid #bbb; color: #666; }
-.check-row { display: block; }
+.group-title { margin: 1.1em 0 .3em; font-size: 1.05em; }
+.advanced-title { margin-top: 1.8em; padding-top: .9em; border-top: 1px solid #bbb; color: #666; }
+.check-row { display: block; width: max-content; padding: .25em .5em .25em 0; margin: .1em 0; }
+/* Segmented radio control: painted pill lives on the text span; the radio is invisible but focusable.
+   Uniform (regular) weight keeps segment widths constant regardless of the checked value. */
+.segment { display: inline-flex; border: 1px solid ButtonBorder; border-radius: .45em; overflow: hidden; }
+.segment label { display: inline-flex; margin: 0; position: relative; }
+.segment input { position: absolute; opacity: 0; pointer-events: none; }
+.segment span { padding: .2em .8em; cursor: pointer; color: #666; }
+.segment label + label span { border-inline-start: 1px solid ButtonBorder; }
+.segment input:checked + span { background: color-mix(in srgb, Highlight 15%, ButtonFace); color: unset; }
+.segment input:focus-visible + span { outline: 2px solid Highlight; outline-offset: -2px; }
 /* Two-column grid: labels left, controls in one aligned column. */
-.control-row { display: grid; grid-template-columns: 1fr max-content; justify-items: start; align-items: center; gap: 1em; margin: .35em 0; }
+.control-row { display: grid; grid-template-columns: 1fr max-content; justify-items: start; align-items: center; gap: 1em; margin: .15em 0; }
 .control-row label { margin: 0; }
 /* Overrides table: flexible name, compact selector, narrow remove column. */
-.override-row { display: grid; grid-template-columns: 1fr 6.5em 2em; justify-items: start; align-items: center; gap: 1em; margin: .3em 0; }
+.override-row { display: grid; grid-template-columns: 1fr max-content 2em; justify-items: start; align-items: center; gap: 1em; margin: .1em 0; }
 .override-row button { font-size: .8em; padding: 0 .35em; }
-#policy-overrides { max-height: 22em; overflow-y: auto; scrollbar-gutter: stable; padding: .35em .5em; margin: .3em 0 .6em; border: 1px solid ButtonBorder; border-radius: .5em; }
+#policy-overrides { max-height: 22em; overflow-y: auto; scrollbar-gutter: stable; padding: .35em .5em; margin: .2em 0 .4em; border: 1px solid ButtonBorder; border-radius: .5em; }
 select { font: inherit; padding: .1em .4em; }
 button { font: inherit; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
@@ -36,6 +46,10 @@ dialog input[type="search"] { width: 100%; box-sizing: border-box; margin-bottom
 .lang-option input { margin: 0; }
 .dialog-buttons { display: flex; flex-direction: row-reverse; justify-content: flex-start; gap: .5em; }
 [hidden] { display: none !important; }
+/* Very narrow windows: segments drop below their label instead of squishing. */
+@media (max-width: 34em) {
+  .control-row, .override-row { grid-template-columns: 1fr; }
+}
 </style>
 </head>
 <body>
