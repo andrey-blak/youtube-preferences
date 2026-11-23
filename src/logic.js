@@ -243,6 +243,7 @@ tested in Node via node:vm (tests/logic.test.mjs). */
     shouldEnforceFullscreenPause,
     isWatchPage,
     normalizeText,
+    primaryLanguage,
     applyAmbientPref,
     isAmbientPrefOff,
     captionTrackIsAnimated,

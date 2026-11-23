@@ -44,14 +44,21 @@ Uses long-standing public element methods only; never minified fields. */
   // Caption tracks from getOption("captions","tracklist"): plain-JSON shape for logic.js.
   // Field spellings defensive (vssId vs vss_id; name object vs string) — ImprovedTube proves both spellings occur across builds;
   // matching words ("Animated") are not localized.
+  // translationLanguageCode is the auto-translation override layer: a track can BE "en" yet RENDER Russian.
+  // The field shape is from YouTube's own resolver (translationLanguage.languageCode wins over languageCode, base.js g.BG).
   function flattenCaption(track) {
     if (!track) return null;
     const name = typeof track.name === "string" ?
       track.name :
       track.name?.simpleText ?? null;
+    // Live probe (2026-11-22): translationLanguage is a PLAIN STRING ("en") on the current track — object-field reads would silently miss it.
+    const tl = typeof track.translationLanguage === "string" ?
+      track.translationLanguage :
+      track.translationLanguage?.languageCode ?? null;
     return {
       name,
       languageCode: track.languageCode ?? null,
+      translationLanguageCode: tl,
       kind: track.kind ?? null,
       vssId: track.vssId ?? track.vss_id ?? null,
       trackName: track.trackName ?? null
@@ -73,6 +80,7 @@ Uses long-standing public element methods only; never minified fields. */
   lang:"en-US" plus "dubbed-aut" on the auto-dub. */
   function parseAudioTrackLang(id) {
     const lang = String(id ?? "").split(".")[0].split("-")[0];
+    if (/^und$/i.test(lang)) return null; // ISO "undetermined" is not a language key (seen live: audioTrackId "und.4")
     return /^[a-z]{2,3}$/i.test(lang) ? lang.toLowerCase() : null;
   }
 
@@ -92,6 +100,20 @@ Uses long-standing public element methods only; never minified fields. */
       if (at.length === 1) return parseAudioTrackLang(at[0].audioTrackId);
     } catch { /* degrade to null — selection falls back to the current subtitle language */ }
     return null;
+  }
+
+  // Published events only reach the player's own dispatcher (live-proven 2026-11: DOM listeners never see them).
+  // Arm once per player element; the watch re-arms naturally because GET_CAPTIONS runs on every apply pass,
+  // including the player-replaced pass after a new video.
+  function watchCaptions(player) {
+    if (player.__ytPrefsCaptionWatch) return;
+    player.__ytPrefsCaptionWatch = true;
+    player.addEventListener("captionschanged", () => {
+      window.postMessage({
+        source: "yt-prefs-bridge",
+        type: "CAPTIONS_CHANGED"
+      }, "*");
+    });
   }
 
   window.addEventListener("message", event => {
@@ -174,6 +196,7 @@ Uses long-standing public element methods only; never minified fields. */
             return respond(data, {
               error: "getOption unavailable"
             });
+          watchCaptions(player);
           const list = (player.getOption("captions", "tracklist", {
             includeAsr: true
           }) ?? []).map(flattenCaption);

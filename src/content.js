@@ -18,7 +18,8 @@
     captionTrackIsAnimated,
     pickPreferredCaptionTrack,
     decideCaptions,
-    LANGUAGE_CATALOG
+    LANGUAGE_CATALOG,
+    primaryLanguage
   } = YTLogic;
 
   // ---- config (browser.storage.sync, live-reloaded) ----
@@ -60,6 +61,13 @@
       if (data?.source !== "yt-prefs-bridge") return;
       if (data.type === "BRIDGE_READY") {
         bridgeReady = true;
+        return;
+      }
+      if (data.type === "CAPTIONS_CHANGED") {
+        // Published event forwarded from the page world (see page-bridge.js watchCaptions).
+        // Echoes of our own writes are dropped mid-enforcement — the feedback loop that once oscillated show/hide.
+        if (captionsEnforcing) return log("captions: echo suppressed (mid-enforcement)");
+        requestApply("captions-changed");
         return;
       }
       const settle = pending.get(data.requestId);
@@ -124,6 +132,11 @@
         timeout: 3000
       }))) return;
     log("applyAll:", reason);
+    // Subtitle events need only the subtitle mechanism — re-running autoplay/ambient/audio enforcement on every caption flip was log noise and wasted bridge calls.
+    if (reason === "captions-changed") {
+      if (config.preferOriginalCaptions || config.captionsPolicy) await enforceCaptions();
+      return;
+    }
     // DOM-only: instant, no bridge needed
     await enforceAutoplayOff();
     applyAmbientStyle();
@@ -137,10 +150,7 @@
     if (config.selectOriginalAudio) await applyOriginalAudio();
     if (config.disableStableVolume) await applyStableVolume();
     if (config.disableAnnotations) await applyAnnotations();
-    if (config.preferOriginalCaptions) await applyOriginalCaptions();
-    // Visibility policy runs AFTER track selection: the picker restores the previous on/off state, so the policy must be the final word on each video.
-    const capState = await bridge.call("GET_CAPTIONS");
-    await applyCaptionsPolicy(capState);
+    if (config.preferOriginalCaptions || config.captionsPolicy) await enforceCaptions();
   }
 
   // ---- autoplay: DOM attribute + click; locale-free, works today ----
@@ -314,7 +324,8 @@
   A trusted click on any settings-menu row = an explicit pick: picker and policy both stand down until the next video.
   Current builds dropped the ytp-caption-track element, so .ytp-menuitem is the stable menu signal. */
   let captionVisibilityChoice = false,
-    captionTrackChoice = false;
+    captionTrackChoice = false,
+    captionsEnforcing = false;
 
   document.addEventListener("click", e => {
     if (e.isTrusted !== true || !(e.target instanceof Element)) return;
@@ -327,7 +338,7 @@
     }
   }, true);
 
-  // Keyboard caption toggles (t / c) are the same visibility choice as clicking CC.
+  // Keyboard caption toggles are the same visibility choice as clicking CC.
   document.addEventListener("keydown", e => {
     if (e.isTrusted !== true || e.repeat) return;
     const k = String(e.key).toLowerCase();
@@ -337,54 +348,81 @@
     log("captions: keyboard toggle by user; visibility respected this video");
   }, true);
 
-  // ---- captions selection policy (features C+D) ----
-  /*
-  Prefer subtitles in the ORIGINAL AUDIO language (Russian audio => Russian subs, even when YouTube defaults to English).
-  Within a language: manual upload > Standard > auto-generated; Animated is never the answer.
-  A manual pick of a dispreferred track is re-forced on the next video.
-  No suitable track -> skip silently. */
-  async function applyOriginalCaptions() {
-    if (captionTrackChoice) return log("captions: user track choice respected this video (skip)");
-    const res = await bridge.call("GET_CAPTIONS");
-    if (res.error) return log("captions probe failed:", res.error);
-    const list = res.list ?? [];
+  // ---- caption enforcement: visibility policy + track selection, unified ----
+  /* Rationale from live logs: writing the captions TRACK while subtitles are OFF is dropped by YouTube (it re-applies its sticky pick at video start) —
+  that produced endless "selected ... verified: false" and left English as the de-facto track, surfacing the moment the user pressed t.
+  Order of operations: 1) decide visibility (manual respect > policy), 2) enforce the preferred track ONLY when captions are or will be shown, with a bounded verify-retry, 3) final visibility write (a track switch forces captions ON, so visibility gets the last word).
+  Track preference stays as before: original-audio language, manual > Standard > asr, Animated never wins (logic.js pickers). */
+  async function enforceCaptions() {
+    const st = await bridge.call("GET_CAPTIONS");
+    if (st.error) return log("captions probe failed:", st.error);
+    const list = st.list ?? [];
     if (list.length === 0) return log("captions: no tracks (skip)");
-    const target = pickPreferredCaptionTrack(list, res.audioLanguage ?? null,
-      res.current?.languageCode ?? null);
-    if (!target) return log("captions: no non-animated track in original/current language (skip)");
-    if (!target.vssId) return log("captions: target track has no vssId (skip)");
-    if (res.current && res.current.vssId === target.vssId)
-      return log("captions: preferred track already selected:", target.languageCode);
-    if (!res.current && !list.some(captionTrackIsAnimated))
-      return log("captions: nothing selected, nothing Animated on offer (skip)");
-    const set = await bridge.call("SET_CAPTION_TRACK", {
-      vssId: target.vssId
-    });
-    if (set.error || !set.success) return log("setCaptionTrack failed:", set.error);
-    log("captions: selected", target.languageCode,
-      target.trackName ?? "", "(audio:", res.audioLanguage ?? "unknown", ") verified:",
-      set.current?.vssId === target.vssId && !captionTrackIsAnimated(set.current));
-  }
+    const visibleNow = st.on === true;
+    // What the viewer actually READS: YouTube may render a translation of the selected track (translationLanguage wins over languageCode).
+    const rendered = t => t ? (t.translationLanguageCode ?? t.languageCode ?? null) : null;
+    captionsEnforcing = true;
+    try {
+      // The policy keys on STABLE video facts, never on the ephemeral selection:
+      // st.current is null exactly while subtitles are hidden, which previously fed the unlisted branch and oscillated show/hide forever via captionschanged echoes.
+      // The picker target is the language the video WOULD show — computed first, reused for decision and selection.
+      const target = (config.preferOriginalCaptions && !captionTrackChoice) ?
+        pickPreferredCaptionTrack(list, st.audioLanguage ?? null,
+          st.current?.languageCode ?? list[0]?.languageCode ?? null) :
+        null;
+      const policyLang = rendered(target ?? st.current ?? list[0]);
 
-  // ---- captions visibility policy ----
-  /* Per-language show/hide on top of track selection.
-  Keyed on two candidate languages, audio first: an audio rule (ru=off) wins even when the only caption track is another language (en).
-  A subtitle-track rule (tlh=on) catches languages that are never audio. "keep" leaves YouTube's own memory alone. */
-  async function applyCaptionsPolicy(state) {
-    const pol = config.captionsPolicy;
-    if (!pol) return log("captions policy: no config (skip)");
-    if (captionVisibilityChoice) return log("captions policy: user choice respected this video (skip)");
-    if (!Array.isArray(state.list) || state.list.length === 0)
-      return log("captions policy: no caption tracks on this video (skip)");
-    const trackLang = state.current?.languageCode ?? null;
-    const decision = decideCaptions(pol, state.audioLanguage, trackLang, LANGUAGE_CATALOG);
-    if (decision === "keep") return log("captions policy: keep (untouched)");
-    const r = await bridge.call("SET_CAPTIONS_VISIBLE", {
-      enabled: decision === "on"
-    });
-    if (r.error) return log("setCaptionsVisible failed:", r.error);
-    log("captions policy:", decision, "(audio:", state.audioLanguage ?? "?",
-      "/subs:", trackLang ?? "?", ") verified:", r.visible === (decision === "on"));
+      const pol = config.captionsPolicy;
+      const decision = pol ?
+        decideCaptions(pol, st.audioLanguage, policyLang, LANGUAGE_CATALOG) :
+        "keep";
+      let wantVisible = visibleNow;
+      if (!captionVisibilityChoice && decision === "on") wantVisible = true;
+      if (!captionVisibilityChoice && decision === "off") wantVisible = false;
+      if (pol) log("captions policy:", decision,
+        "(audio:", st.audioLanguage ?? "?", "/subs:", policyLang ?? "?", ")",
+        captionVisibilityChoice ? "— user choice respected" : "");
+
+      if (target && wantVisible) {
+        const sameTrack = st.current && st.current.vssId === target.vssId &&
+          !captionTrackIsAnimated(st.current);
+        // A matching vssId is NOT enough: the current track may carry a translationLanguage override (live-proven) — the rendered language must match too.
+        const sameRendering = sameTrack &&
+          primaryLanguage(rendered(st.current)) === primaryLanguage(target.languageCode);
+        if (!target.vssId) log("captions: target track has no vssId (skip)");
+        else if (sameRendering)
+          log("captions: preferred track already selected:", target.languageCode);
+        else {
+          // Re-selecting the FRESH tracklist object (which carries no translationLanguage) clears the override — the lever identified by the 2026-11-22 probe.
+          const set = await bridge.call("SET_CAPTION_TRACK", {
+            vssId: target.vssId
+          });
+          if (set.error) return log("setCaptionTrack failed:", set.error);
+          const ok = await waitUntil(async () => {
+            const r = await bridge.call("GET_CAPTIONS");
+            return r.current && r.current.vssId === target.vssId &&
+              !captionTrackIsAnimated(r.current) &&
+              primaryLanguage(rendered(r.current)) === primaryLanguage(target.languageCode);
+          }, {
+            interval: 150,
+            timeout: 1500
+          });
+          log("captions: selected", target.languageCode, target.trackName ?? "",
+            sameTrack ? "(cleared translation override," : "(track", st.current?.vssId ?? "?", "->",
+            "audio:", st.audioLanguage ?? "?", ") verified:", ok);
+        }
+      }
+
+      if (!captionVisibilityChoice && wantVisible !== visibleNow) {
+        const r = await bridge.call("SET_CAPTIONS_VISIBLE", {
+          enabled: wantVisible
+        });
+        log("captions visibility:", wantVisible ? "shown" : "hidden",
+          "verified:", r.visible === wantVisible);
+      }
+    } finally {
+      captionsEnforcing = false;
+    }
   }
 
   // ---- left sidebar (guide) collapse: all non-watch pages ----
@@ -500,8 +538,8 @@
   // ---- triggers: navigation + actual player replacement only ----
   document.addEventListener("yt-navigate-finish", () => requestApply("navigate"));
   window.addEventListener("popstate", () => requestApply("popstate"));
-  // YouTube decides the track itself when the user enables CC (often a translated default): re-assert on that event, not only on navigation.
-  document.addEventListener("captionschanged", () => requestApply("captions-changed"), true);
+  // Published player events (captionschanged) travel through the player's own page-world dispatcher, not the DOM — a proven-live test saw nothing on document listeners.
+  // page-bridge.js subscribes on the player element and forwards CAPTIONS_CHANGED messages; handled in the bridge client above.
   let lastPlayerRef = null;
   new MutationObserver(() => {
     const p = getPlayer();
